@@ -55,7 +55,7 @@ Before the container is restarted, you must:
 
 ---
 
-### 3️⃣ Basic JVM Observability (**15 bonus points**)
+### 3️⃣ Basic JVM Observability (**15 points**)
 
 Enhance observability by:
 
@@ -65,7 +65,7 @@ Enhance observability by:
 
 ---
 
-### 4️⃣ CI/CD Pipeline (**20 bonus points**)
+### 4️⃣ CI/CD Pipeline (**20 points**)
 
 Create a GitHub Actions workflow that:
 
@@ -129,9 +129,9 @@ Clearly explain your intent if you're unable to implement full tooling — **com
 |------------------------------------------|--------|
 | Helm chart (Deployment, Service, Ingress)| 45     |
 | Pre-restart stack dump to node log       | 20     |
-| JVM observability (Prometheus, exporter) | +15    |
-| CI/CD pipeline (GitHub Actions)          | +20    |
-| **Total**                                | **100+** |
+| JVM observability (Prometheus, exporter) | 15    |
+| CI/CD pipeline (GitHub Actions)          | 20    |
+| **Total**                                | **100** |
 
 ---
 
