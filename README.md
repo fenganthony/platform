@@ -20,7 +20,7 @@ You are given a prebuilt Java Spring Boot application (or can build it yourself 
 
 ## ✅ Your Tasks
 
-### 1️⃣ Helm Chart Setup (**40 points**)
+### 1️⃣ Helm Chart Setup (**45 points**)
 
 Design and submit a Helm chart that includes:
 
@@ -51,11 +51,11 @@ Before the container is restarted, you must:
 
 - Use `jstack` (or equivalent) to dump the JVM thread stack
 - Save the output to the **Kubernetes node's local disk**
-- Path format: `/var/log/java-dump/<pod-name>.log`
+- Path format (example): `/var/log/java-dump/<pod-name>.log`
 
 ---
 
-### 3️⃣ Basic JVM Observability (**10 bonus points**)
+### 3️⃣ Basic JVM Observability (**15 bonus points**)
 
 Enhance observability by:
 
@@ -65,7 +65,7 @@ Enhance observability by:
 
 ---
 
-### 4️⃣ CI/CD Pipeline (**15 bonus points**)
+### 4️⃣ CI/CD Pipeline (**20 bonus points**)
 
 Create a GitHub Actions workflow that:
 
@@ -74,16 +74,6 @@ Create a GitHub Actions workflow that:
 - (Optional) Validates Helm templates or performs dry-run deploys
 
 > Place your workflow in `.github/workflows/pipeline.yml`
-
----
-
-### 5️⃣ Logging & Compatibility Handling (**15 points**)
-
-- Ensure all logs are accessible (`stdout`, stack trace dumps)
-- If `jstack` is unavailable, explain fallback options such as:
-  - `/proc/<pid>/stack`
-  - `jcmd`, `kill -3`, or `jmap`
-  - PID discovery via `jps`, `ps`, or sidecar inspection
 
 ---
 
@@ -96,7 +86,6 @@ All requirements are considered **realistic and production-relevant** for a Plat
 | Helm templating         | Industry standard for Kubernetes deployments                                  |
 | Probes & resource limits| Essential for platform-managed app health and autoscaling                    |
 | Pre-restart diagnostics | Required in real-world SRE/on-call workflows                                 |
-| Node log export         | Practical in cases where central logging is not available                    |
 | JVM observability       | Crucial for diagnosing GC/Thread contention in production Java systems        |
 | CI/CD pipeline          | Demonstrates automation readiness and delivery process awareness              |
 
@@ -109,7 +98,7 @@ All requirements are considered **realistic and production-relevant** for a Plat
    - Sample `values.yaml`
    - Optional: `.github/workflows/` CI/CD workflow
    - README explaining how to test, deploy, and analyze
-2. Logs and dumps outputted by the app or supporting scripts
+2. Logs and dumps outputted by the app `logs/<pod-name>.log`
 3. A short `SUMMARY.md` with:
    - Your design decisions
    - Any assumptions or limitations
@@ -138,11 +127,10 @@ Clearly explain your intent if you're unable to implement full tooling — **com
 
 | Section                                  | Points |
 |------------------------------------------|--------|
-| Helm chart (Deployment, Service, Ingress)| 40     |
+| Helm chart (Deployment, Service, Ingress)| 45     |
 | Pre-restart stack dump to node log       | 20     |
-| Logging & compatibility handling         | 15     |
-| JVM observability (Prometheus, exporter) | +10    |
-| CI/CD pipeline (GitHub Actions)          | +15    |
+| JVM observability (Prometheus, exporter) | +15    |
+| CI/CD pipeline (GitHub Actions)          | +20    |
 | **Total**                                | **100+** |
 
 ---
