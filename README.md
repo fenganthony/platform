@@ -1,8 +1,8 @@
-# 🧪 Platform Engineer Take-Home Assignment – Java Lock Simulation & Helm Observability
+# 🧪 Platform Engineer homework Assignment – Java Lock Simulation & Helm Observability
 
 ## 📌 Objective
 
-This take-home assignment is designed to evaluate your ability to deploy, monitor, and operate a Java-based application on Kubernetes using Helm and diagnostic tools. You will simulate a production scenario where a service becomes unresponsive due to internal thread contention. Your task is to make it observable, recoverable, and operationally safe.
+This homework assignment is designed to evaluate your ability to deploy, monitor, and operate a Java-based application on Kubernetes using Helm and diagnostic tools. You will simulate a production scenario where a service becomes unresponsive due to internal thread contention. Your task is to make it observable, recoverable, and operationally safe.
 
 ---
 
@@ -61,7 +61,7 @@ Enhance observability by:
 
 - Adding `jmx_exporter` or similar
 - Exposing JVM thread/GC metrics via Prometheus
-- Showing how alerts can be defined for thread blocking
+- (Optional) Showing how alerts can be defined for thread blocking
 
 ---
 
