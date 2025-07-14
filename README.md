@@ -137,6 +137,20 @@ Clearly explain your intent if you're unable to implement full tooling — **com
 
 ## 🚀 Testing Instructions
 
+The following `Makefile` commands are available to simplify Docker-based development and testing:
+
+| Command           | Description                                                |
+|------------------|------------------------------------------------------------|
+| `make build`     | Build the Docker image using the specified image name and tag |
+| `make run`       | Run the container locally, exposing it on port 8080         |
+| `make stop`      | Stop the running container                                  |
+| `make logs`      | Stream logs from the container                              |
+| `make push`      | Push the built image to your Docker registry                |
+| `make clean`     | Remove the local Docker image                               |
+
+> Default image: `yourname/spring-hello-problem:1.0.0`  
+> Exposed port: `8080`
+
 ```bash
 # After deploying via Helm:
 curl http://<your-ingress-host>/hello
