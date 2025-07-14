@@ -1,4 +1,4 @@
-# 🧪 Platform Engineer homework Assignment – Java Lock Simulation & Helm Observability
+# 🧪 Platform Engineer Homework Assignment – Java Lock Simulation & Helm Observability
 
 ## 📌 Objective
 
