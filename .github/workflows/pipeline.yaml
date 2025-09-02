@@ -26,6 +26,10 @@ on:
         description: "Run 'helm install --dry-run' against a real cluster (requires KUBE_CONFIG secret)"
         type: boolean
         default: false
+      kubeconfig_b64:
+        description: "Base64-encoded kubeconfig (only used when manual run + cluster_dry_run=true)"
+        required: false
+        type: string
 
 permissions:
   contents: read
@@ -150,18 +154,19 @@ jobs:
             --set image.tag="${{ env.EFFECTIVE_TAG }}"
 
       - name: Write kubeconfig
-        if: ${{ env.HELM_CLUSTER_DRY_RUN == 'true' && (secrets.KUBE_CONFIG || '') != '' }}
+        if: ${{ env.HELM_CLUSTER_DRY_RUN == 'true' && env.KUBECONFIG_B64 != '' }}
         run: |
           mkdir -p ~/.kube
-          echo "${{ secrets.KUBE_CONFIG }}" | base64 -d > ~/.kube/config
+          # avoid printing the value; decode into file
+          printf '%s' "${KUBECONFIG_B64}" | base64 -d > ~/.kube/config
           chmod 600 ~/.kube/config
 
       - name: helm install --dry-run --debug
-        if: ${{ env.HELM_CLUSTER_DRY_RUN == 'true' && (secrets.KUBE_CONFIG || '') != '' }}
+        if: ${{ env.HELM_CLUSTER_DRY_RUN == 'true' && env.KUBECONFIG_B64 != '' }}
         run: |
           helm install "${{ env.HELM_RELEASE }}" "${{ env.HELM_CHART_PATH }}" \
-          --namespace "${{ env.HELM_NAMESPACE }}" \
-          --create-namespace \
-          --dry-run --debug \
-          --set image.repository="${{ env.IMAGE }}" \
-          --set image.tag="${{ env.EFFECTIVE_TAG }}"
+            --namespace "${{ env.HELM_NAMESPACE }}" \
+            --create-namespace \
+            --dry-run --debug \
+            --set image.repository="${{ env.IMAGE }}" \
+            --set image.tag="${{ env.EFFECTIVE_TAG }}"
