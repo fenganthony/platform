@@ -150,18 +150,18 @@ jobs:
             --set image.tag="${{ env.EFFECTIVE_TAG }}"
 
       - name: Write kubeconfig
-  if: ${{ env.HELM_CLUSTER_DRY_RUN == 'true' && (secrets.KUBE_CONFIG || '') != '' }}
-  run: |
-    mkdir -p ~/.kube
-    echo "${{ secrets.KUBE_CONFIG }}" | base64 -d > ~/.kube/config
-    chmod 600 ~/.kube/config
+        if: ${{ env.HELM_CLUSTER_DRY_RUN == 'true' && (secrets.KUBE_CONFIG || '') != '' }}
+        run: |
+          mkdir -p ~/.kube
+          echo "${{ secrets.KUBE_CONFIG }}" | base64 -d > ~/.kube/config
+          chmod 600 ~/.kube/config
 
-- name: helm install --dry-run --debug
-  if: ${{ env.HELM_CLUSTER_DRY_RUN == 'true' && (secrets.KUBE_CONFIG || '') != '' }}
-  run: |
-    helm install "${{ env.HELM_RELEASE }}" "${{ env.HELM_CHART_PATH }}" \
-      --namespace "${{ env.HELM_NAMESPACE }}" \
-      --create-namespace \
-      --dry-run --debug \
-      --set image.repository="${{ env.IMAGE }}" \
-      --set image.tag="${{ env.EFFECTIVE_TAG }}"
+      - name: helm install --dry-run --debug
+        if: ${{ env.HELM_CLUSTER_DRY_RUN == 'true' && (secrets.KUBE_CONFIG || '') != '' }}
+        run: |
+          helm install "${{ env.HELM_RELEASE }}" "${{ env.HELM_CHART_PATH }}" \
+          --namespace "${{ env.HELM_NAMESPACE }}" \
+          --create-namespace \
+          --dry-run --debug \
+          --set image.repository="${{ env.IMAGE }}" \
+          --set image.tag="${{ env.EFFECTIVE_TAG }}"
