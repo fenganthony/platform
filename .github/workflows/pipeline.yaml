@@ -7,12 +7,12 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: "Image version (e.g. 1.0.0). If set, overrides tag logic."
+        description: "Image version (e.g. v1.2.3). If set, overrides tag logic."
         required: false
       helm_lint:
         description: "Run Helm lint/template/dry-run"
         type: boolean
-        default: true
+        default: false
       helm_chart_path:
         description: "Path to Helm chart"
         default: "./java-app"
@@ -25,7 +25,7 @@ on:
 
 permissions:
   contents: read
-  packages: write   # GHCR push 需要
+  packages: write 
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -36,22 +36,21 @@ jobs:
     runs-on: ubuntu-latest
     env:
       IMAGE: ghcr.io/fenganthony/spring-hello-problem
+      DEFAULT_VERSION: v1.0.0
+      HELM_LINT: "true"
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      # 決定要使用的 tag
       - name: Compute EFFECTIVE_TAG
         shell: bash
         run: |
           if [[ "${{ github.event_name }}" == "workflow_dispatch" && -n "${{ inputs.version }}" ]]; then
             TAG="${{ inputs.version }}"
           elif [[ "${{ github.ref_type }}" == "tag" ]]; then
-            TAG="${GITHUB_REF_NAME#v}"
-          elif [[ "${{ github.ref }}" == "refs/heads/${{ github.event.repository.default_branch }}" ]]; then
-            TAG="latest"
+            TAG="${GITHUB_REF_NAME}"
           else
-            TAG="${GITHUB_REF_NAME//\//-}"
+            TAG="${DEFAULT_VERSION}"
           fi
           echo "EFFECTIVE_TAG=$TAG" >> $GITHUB_ENV
           echo "Using tag: $TAG"
@@ -87,15 +86,15 @@ jobs:
 
       # ---------- Optional Helm checks ----------
       - name: Setup Helm
-        if: ${{ github.event_name == 'workflow_dispatch' && inputs.helm_lint }}
+        if: ${{ (github.event_name == 'workflow_dispatch' && inputs.helm_lint) || env.HELM_LINT == 'true' }}
         uses: azure/setup-helm@v4
 
       - name: helm lint
-        if: ${{ github.event_name == 'workflow_dispatch' && inputs.helm_lint }}
+        if: ${{ (github.event_name == 'workflow_dispatch' && inputs.helm_lint) || env.HELM_LINT == 'true' }}
         run: helm lint "${{ inputs.helm_chart_path }}"
 
       - name: helm template (render manifests)
-        if: ${{ github.event_name == 'workflow_dispatch' && inputs.helm_lint }}
+        if: ${{ (github.event_name == 'workflow_dispatch' && inputs.helm_lint) || env.HELM_LINT == 'true' }}
         run: |
           helm template "${{ inputs.helm_release }}" "${{ inputs.helm_chart_path }}" \
             --namespace "${{ inputs.helm_namespace }}" \
@@ -103,7 +102,7 @@ jobs:
             --set image.tag="${{ env.EFFECTIVE_TAG }}"
 
       - name: helm install --dry-run --debug
-        if: ${{ github.event_name == 'workflow_dispatch' && inputs.helm_lint }}
+        if: ${{ (github.event_name == 'workflow_dispatch' && inputs.helm_lint) || env.HELM_LINT == 'true' }}
         run: |
           helm install "${{ inputs.helm_release }}" "${{ inputs.helm_chart_path }}" \
             --namespace "${{ inputs.helm_namespace }}" \
