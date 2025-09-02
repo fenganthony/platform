@@ -43,7 +43,7 @@ jobs:
       DEFAULT_VERSION: v1.0.0                           
       HELM_LINT_DEFAULT: "true"                         
       HELM_CHART_PATH_DEFAULT: ./java-app
-      HELM_CLUSTER_DRY_RUN_DEFAULT: "false"               
+      HELM_CLUSTER_DRY_RUN_DEFAULT: "true"
     steps:
       - name: Checkout
         uses: actions/checkout@v4
