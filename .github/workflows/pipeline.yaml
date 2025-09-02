@@ -164,4 +164,4 @@ jobs:
             --create-namespace \
             --dry-run --debug \
             --set image.repository="${{ env.IMAGE }}" \
-            --set image.tag="${{ env.EFFECTIVE_TAG }}"
+            --set image.tag="${{ env.EFFECTIVE_TAG }}""
