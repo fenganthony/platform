@@ -3,7 +3,7 @@ name: CI/CD (GHCR + optional Helm)
 on:
   push:
     branches: [ "anthony_feature" ]
-    tags:     [ "v*" ]
+    tags: [ "v*" ]
   workflow_dispatch:
     inputs:
       version:
@@ -14,8 +14,8 @@ on:
         type: boolean
         default: false
       helm_chart_path:
-        description: "Path to Helm chart"
-        default: "../../java-app"
+        description: "Path to Helm chart (must contain Chart.yaml)"
+        default: "./java-app"
       helm_release:
         description: "Release name (for dry-run)"
         default: "java-app"
@@ -25,7 +25,7 @@ on:
 
 permissions:
   contents: read
-  packages: write 
+  packages: write   # GHCR push
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -35,13 +35,13 @@ jobs:
   build-and-push:
     runs-on: ubuntu-latest
     env:
-      IMAGE: ghcr.io/fenganthony/spring-hello-problem
-      DEFAULT_VERSION: v1.0.0
-      HELM_LINT: "true"
+      IMAGE: ghcr.io/fenganthony/spring-hello-problem   
+      DEFAULT_VERSION: v1.0.0                           
+      HELM_LINT_DEFAULT: "true"                         
+      HELM_CHART_PATH_DEFAULT: ./java-app               
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-
       - name: Compute EFFECTIVE_TAG
         shell: bash
         run: |
@@ -54,6 +54,42 @@ jobs:
           fi
           echo "EFFECTIVE_TAG=$TAG" >> $GITHUB_ENV
           echo "Using tag: $TAG"
+      - name: Resolve Helm effective inputs
+        shell: bash
+        run: |
+          # helm_lint
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" && "${{ inputs.helm_lint }}" == "true" ]]; then
+            echo "HELM_LINT=true" >> $GITHUB_ENV
+          else
+            echo "HELM_LINT=${HELM_LINT_DEFAULT}" >> $GITHUB_ENV
+          fi
+
+          # helm_chart_path
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" && -n "${{ inputs.helm_chart_path }}" ]]; then
+            echo "HELM_CHART_PATH=${{ inputs.helm_chart_path }}" >> $GITHUB_ENV
+          else
+            echo "HELM_CHART_PATH=${HELM_CHART_PATH_DEFAULT}" >> $GITHUB_ENV
+          fi
+
+          # release / namespace
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            echo "HELM_RELEASE=${{ inputs.helm_release }}"   >> $GITHUB_ENV
+            echo "HELM_NAMESPACE=${{ inputs.helm_namespace }}" >> $GITHUB_ENV
+          else
+            echo "HELM_RELEASE=java-app"   >> $GITHUB_ENV
+            echo "HELM_NAMESPACE=default"  >> $GITHUB_ENV
+          fi
+      - name: Validate Helm chart path
+        if: env.HELM_LINT == 'true'
+        shell: bash
+        run: |
+          if [[ ! -f "${HELM_CHART_PATH}/Chart.yaml" ]]; then
+            echo "❌ Chart.yaml not found under ${HELM_CHART_PATH}"
+            echo "Repo tree (depth 3):"
+            find . -maxdepth 3 -type f -name 'Chart.yaml' -o -name 'values.yaml' | sed 's|^\./||'
+            exit 1
+          fi
+          echo "✅ Found ${HELM_CHART_PATH}/Chart.yaml"
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -86,26 +122,26 @@ jobs:
 
       # ---------- Optional Helm checks ----------
       - name: Setup Helm
-        if: ${{ (github.event_name == 'workflow_dispatch' && inputs.helm_lint) || env.HELM_LINT == 'true' }}
+        if: env.HELM_LINT == 'true'
         uses: azure/setup-helm@v4
 
       - name: helm lint
-        if: ${{ (github.event_name == 'workflow_dispatch' && inputs.helm_lint) || env.HELM_LINT == 'true' }}
-        run: helm lint "${{ inputs.helm_chart_path }}"
+        if: env.HELM_LINT == 'true'
+        run: helm lint "${{ env.HELM_CHART_PATH }}"
 
       - name: helm template (render manifests)
-        if: ${{ (github.event_name == 'workflow_dispatch' && inputs.helm_lint) || env.HELM_LINT == 'true' }}
+        if: env.HELM_LINT == 'true'
         run: |
-          helm template "${{ inputs.helm_release }}" "${{ inputs.helm_chart_path }}" \
-            --namespace "${{ inputs.helm_namespace }}" \
+          helm template "${{ env.HELM_RELEASE }}" "${{ env.HELM_CHART_PATH }}" \
+            --namespace "${{ env.HELM_NAMESPACE }}" \
             --set image.repository="${{ env.IMAGE }}" \
             --set image.tag="${{ env.EFFECTIVE_TAG }}"
 
       - name: helm install --dry-run --debug
-        if: ${{ (github.event_name == 'workflow_dispatch' && inputs.helm_lint) || env.HELM_LINT == 'true' }}
+        if: env.HELM_LINT == 'true'
         run: |
-          helm install "${{ inputs.helm_release }}" "${{ inputs.helm_chart_path }}" \
-            --namespace "${{ inputs.helm_namespace }}" \
+          helm install "${{ env.HELM_RELEASE }}" "${{ env.HELM_CHART_PATH }}" \
+            --namespace "${{ env.HELM_NAMESPACE }}" \
             --create-namespace \
             --dry-run --debug \
             --set image.repository="${{ env.IMAGE }}" \
