@@ -1,0 +1,84 @@
+image:
+  repository: ghcr.io/fenganthony/spring-hello-problem
+  tag: v1.0.0
+  pullPolicy: IfNotPresent
+replicaCount: 1
+service:
+  type: ClusterIP
+  port: 80
+  targetPort: 8080
+  annotations: {}
+ingress:
+  enabled: false
+  className: ''
+  annotations: {}
+  hosts:
+  - host: example.host.com
+    paths:
+    - path: /hello
+      pathType: Prefix
+  tls: []
+resources:
+  requests:
+    cpu: 100m
+    memory: 256Mi
+  limits:
+    cpu: 500m
+    memory: 512Mi
+podAnnotations: {}
+podLabels: {}
+nodeSelector: {}
+tolerations: []
+affinity: {}
+probes:
+  enabled: true
+  readiness:
+    path: /hello
+    initialDelaySeconds: 5
+    periodSeconds: 5
+    timeoutSeconds: 2
+    failureThreshold: 2
+    successThreshold: 1
+  liveness:
+    path: /hello
+    initialDelaySeconds: 20
+    periodSeconds: 10
+    timeoutSeconds: 2
+    failureThreshold: 3
+  startup:
+    enabled: true
+    path: /hello
+    failureThreshold: 30
+    periodSeconds: 5
+    timeoutSeconds: 2
+preRestartDump:
+  enabled: true
+  hostPathDir: /var/log/java-dump
+  jdkImage: eclipse-temurin:17-jdk
+  timeoutSeconds: 25
+jvmExporter:
+  enabled: false
+  mode: sidecar
+  image: bitnami/jmx-exporter:0.20.0
+  port: 9404
+  config:
+    hostPort: "__POD_IP__:9010"
+    lowercaseOutputName: true
+    lowercaseOutputLabelNames: true
+    rules:
+    - pattern: .*
+  crdInstall: false
+  serviceMonitor:
+    interval: 15s
+    scrapeTimeout: 10s
+    additionalLabels: {}
+  agent:
+    jarUrl: https://repo1.maven.org/maven2/io/prometheus/jmx/jmx_prometheus_javaagent/0.20.0/jmx_prometheus_javaagent-0.20.0.jar
+  sidecar:
+    image: eclipse-temurin:17-jre
+    httpserverJarUrl: https://repo1.maven.org/maven2/io/prometheus/jmx/jmx_prometheus_httpserver/1.0.1/jmx_prometheus_httpserver-1.0.1.jar
+alerts:
+  enabled: false
+  crdInstall: false
+  blockedThreadsThreshold: 20
+imagePullSecrets: []

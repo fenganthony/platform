@@ -1,0 +1,172 @@
+name: CI/CD (GHCR + optional Helm)
+
+on:
+  push:
+    branches: [ "anthony_feature" ]
+    tags: [ "v*" ]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Image version (e.g. v1.2.3). If set, overrides tag logic."
+        required: false
+      helm_lint:
+        description: "Run Helm lint/template/dry-run"
+        type: boolean
+        default: false
+      helm_chart_path:
+        description: "Path to Helm chart (must contain Chart.yaml)"
+        default: "./java-app"
+      helm_release:
+        description: "Release name (for dry-run)"
+        default: "java-app"
+      helm_namespace:
+        description: "Namespace (for dry-run)"
+        default: "default"
+      cluster_dry_run:
+        description: "Run 'helm install --dry-run' against a real cluster (requires KUBE_CONFIG secret)"
+        type: boolean
+        default: false
+      kubeconfig_b64:
+        description: "Base64-encoded kubeconfig (only used when manual run + cluster_dry_run=true)"
+        required: false
+        type: string
+
+permissions:
+  contents: read
+  packages: write   # GHCR push
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    env:
+      IMAGE: ghcr.io/fenganthony/spring-hello-problem   
+      DEFAULT_VERSION: v1.0.0                           
+      HELM_LINT_DEFAULT: "true"                         
+      HELM_CHART_PATH_DEFAULT: ./java-app
+      HELM_CLUSTER_DRY_RUN_DEFAULT: "true"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Compute EFFECTIVE_TAG
+        shell: bash
+        run: |
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" && -n "${{ inputs.version }}" ]]; then
+            TAG="${{ inputs.version }}"
+          elif [[ "${{ github.ref_type }}" == "tag" ]]; then
+            TAG="${GITHUB_REF_NAME}"
+          else
+            TAG="${DEFAULT_VERSION}"
+          fi
+          echo "EFFECTIVE_TAG=$TAG" >> $GITHUB_ENV
+          echo "Using tag: $TAG"
+      - name: Resolve Helm effective inputs
+        shell: bash
+        run: |
+          # helm_lint
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" && "${{ inputs.helm_lint }}" == "true" ]]; then
+            echo "HELM_LINT=true" >> $GITHUB_ENV
+          else
+            echo "HELM_LINT=${HELM_LINT_DEFAULT}" >> $GITHUB_ENV
+          fi
+
+          # helm_chart_path
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" && -n "${{ inputs.helm_chart_path }}" ]]; then
+            echo "HELM_CHART_PATH=${{ inputs.helm_chart_path }}" >> $GITHUB_ENV
+          else
+            echo "HELM_CHART_PATH=${HELM_CHART_PATH_DEFAULT}" >> $GITHUB_ENV
+          fi
+
+          # release / namespace
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            echo "HELM_RELEASE=${{ inputs.helm_release }}"   >> $GITHUB_ENV
+            echo "HELM_NAMESPACE=${{ inputs.helm_namespace }}" >> $GITHUB_ENV
+          else
+            echo "HELM_RELEASE=java-app"   >> $GITHUB_ENV
+            echo "HELM_NAMESPACE=default"  >> $GITHUB_ENV
+          fi
+
+          # to run cluster dry-run
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" && "${{ inputs.cluster_dry_run }}" == "true" ]]; then
+            echo "HELM_CLUSTER_DRY_RUN=true" >> $GITHUB_ENV
+          else
+            echo "HELM_CLUSTER_DRY_RUN=${HELM_CLUSTER_DRY_RUN_DEFAULT}" >> $GITHUB_ENV
+          fi
+      - name: Validate Helm chart path
+        if: env.HELM_LINT == 'true'
+        shell: bash
+        run: |
+          if [[ ! -f "${HELM_CHART_PATH}/Chart.yaml" ]]; then
+            echo "❌ Chart.yaml not found under ${HELM_CHART_PATH}"
+            echo "Repo tree (depth 3):"
+            find . -maxdepth 3 -type f -name 'Chart.yaml' -o -name 'values.yaml' | sed 's|^\./||'
+            exit 1
+          fi
+          echo "✅ Found ${HELM_CHART_PATH}/Chart.yaml"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract Docker metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.IMAGE }}
+          tags: |
+            type=raw,value=${{ env.EFFECTIVE_TAG }}
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to:   type=gha,mode=max
+
+      # ---------- Optional Helm checks ----------
+      - name: Setup Helm
+        if: env.HELM_LINT == 'true'
+        uses: azure/setup-helm@v4
+
+      - name: helm lint
+        if: env.HELM_LINT == 'true'
+        run: helm lint "${{ env.HELM_CHART_PATH }}"
+
+      - name: helm template (render manifests)
+        if: env.HELM_LINT == 'true'
+        run: |
+          helm template "${{ env.HELM_RELEASE }}" "${{ env.HELM_CHART_PATH }}" \
+            --namespace "${{ env.HELM_NAMESPACE }}" \
+            --set image.repository="${{ env.IMAGE }}" \
+            --set image.tag="${{ env.EFFECTIVE_TAG }}"
+
+      - name: Write kubeconfig
+        if: ${{ env.HELM_CLUSTER_DRY_RUN == 'true' && env.KUBECONFIG_B64 != '' }}
+        run: |
+          mkdir -p ~/.kube
+          # avoid printing the value; decode into file
+          printf '%s' "${KUBECONFIG_B64}" | base64 -d > ~/.kube/config
+          chmod 600 ~/.kube/config
+
+      - name: helm install --dry-run --debug
+        if: ${{ env.HELM_CLUSTER_DRY_RUN == 'true' && env.KUBECONFIG_B64 != '' }}
+        run: |
+          helm install "${{ env.HELM_RELEASE }}" "${{ env.HELM_CHART_PATH }}" \
+            --namespace "${{ env.HELM_NAMESPACE }}" \
+            --create-namespace \
+            --dry-run --debug \
+            --set image.repository="${{ env.IMAGE }}" \
+            --set image.tag="${{ env.EFFECTIVE_TAG }}"

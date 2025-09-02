@@ -1,0 +1,201 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "hello-app.fullname" . }}
+  labels:
+    {{- include "hello-app.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ include "hello-app.name" . }}
+      app.kubernetes.io/instance: {{ .Release.Name }}
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: {{ include "hello-app.name" . }}
+        app.kubernetes.io/instance: {{ .Release.Name }}
+        {{- with .Values.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      {{- with .Values.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+    spec:
+      terminationGracePeriodSeconds: 60
+      {{- if .Values.imagePullSecrets }}
+      imagePullSecrets:
+      {{- toYaml .Values.imagePullSecrets | nindent 6 }}
+      {{- end }}
+
+      {{- if .Values.preRestartDump.enabled }}
+      shareProcessNamespace: true
+      {{- end }}
+
+      {{- if and .Values.jvmExporter.enabled (eq .Values.jvmExporter.mode "agent") }}
+      initContainers:
+        - name: fetch-jmx-agent
+          image: curlimages/curl:8.8.0
+          command: ["sh","-c"]
+          args:
+            - >
+              set -e;
+              mkdir -p /opt/jmx;
+              echo "Downloading jmx agent...";
+              curl -fsSL {{ .Values.jvmExporter.agent.jarUrl }} -o /opt/jmx/jmx_prometheus_javaagent.jar
+          volumeMounts:
+            - name: jmx-jar
+              mountPath: /opt/jmx
+      {{- end }}
+
+      {{- if and .Values.jvmExporter.enabled (eq .Values.jvmExporter.mode "sidecar") }}
+      initContainers:
+        - name: fetch-jmx-httpserver
+          image: curlimages/curl:8.8.0
+          command: ["sh","-c"]
+          args:
+            - >
+              set -e;
+              mkdir -p /opt/jmx;
+              echo "Downloading jmx httpserver...";
+              curl -fsSL {{ .Values.jvmExporter.sidecar.httpserverJarUrl }} -o /opt/jmx/jmx_prometheus_httpserver.jar
+          volumeMounts:
+            - name: jmx-jar
+              mountPath: /opt/jmx
+      {{- end }}
+
+      containers:
+        - name: app
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.service.targetPort }}
+          env:
+            {{- if and .Values.jvmExporter.enabled (eq .Values.jvmExporter.mode "agent") }}
+            - name: JAVA_TOOL_OPTIONS
+              value: "-javaagent:/opt/jmx/jmx_prometheus_javaagent.jar={{ .Values.jvmExporter.port }}:/config/jmx.yaml --add-modules=jdk.httpserver"
+            {{- else if and .Values.jvmExporter.enabled (eq .Values.jvmExporter.mode "sidecar") }}
+            - name: JAVA_TOOL_OPTIONS
+              value: "-Dcom.sun.management.jmxremote -Dcom.sun.management.jmxremote.port=9010 -Dcom.sun.management.jmxremote.rmi.port=9010 -Dcom.sun.management.jmxremote.local.only=false -Dcom.sun.management.jmxremote.authenticate=false -Dcom.sun.management.jmxremote.ssl=false -Djava.rmi.server.hostname=127.0.0.1"
+            {{- else }}
+            - name: JAVA_TOOL_OPTIONS
+              value: "-XX:+UseG1GC"
+            {{- end }}
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          {{- if .Values.probes.enabled }}
+          {{- if .Values.probes.startup.enabled }}
+          startupProbe:
+            httpGet:
+              path: {{ .Values.probes.startup.path }}
+              port: http
+            failureThreshold: {{ .Values.probes.startup.failureThreshold }}
+            periodSeconds: {{ .Values.probes.startup.periodSeconds }}
+            timeoutSeconds: {{ .Values.probes.startup.timeoutSeconds }}
+          {{- end }}
+          readinessProbe:
+            httpGet:
+              path: {{ .Values.probes.readiness.path }}
+              port: http
+            initialDelaySeconds: {{ .Values.probes.readiness.initialDelaySeconds }}
+            periodSeconds: {{ .Values.probes.readiness.periodSeconds }}
+            timeoutSeconds: {{ .Values.probes.readiness.timeoutSeconds }}
+            failureThreshold: {{ .Values.probes.readiness.failureThreshold }}
+            successThreshold: {{ .Values.probes.readiness.successThreshold }}
+          livenessProbe:
+            httpGet:
+              path: {{ .Values.probes.liveness.path }}
+              port: http
+            initialDelaySeconds: {{ .Values.probes.liveness.initialDelaySeconds }}
+            periodSeconds: {{ .Values.probes.liveness.periodSeconds }}
+            timeoutSeconds: {{ .Values.probes.liveness.timeoutSeconds }}
+            failureThreshold: {{ .Values.probes.liveness.failureThreshold }}
+          {{- end }}
+          {{- if .Values.preRestartDump.enabled }}
+          lifecycle:
+            preStop:
+              exec:
+                command: ["/bin/sh","-c","/dump/dump.sh || true; sleep 5"]
+          {{- end }}
+          volumeMounts:
+            {{- if or (and .Values.jvmExporter.enabled (eq .Values.jvmExporter.mode "agent")) (and .Values.jvmExporter.enabled (eq .Values.jvmExporter.mode "sidecar")) }}
+            - name: jmx-jar
+              mountPath: /opt/jmx
+            - name: jmx-config
+              mountPath: /config
+              readOnly: true
+            {{- end }}
+            {{- if .Values.preRestartDump.enabled }}
+            - name: dump-script
+              mountPath: /dump
+            - name: node-dump-dir
+              mountPath: /host-logs
+            {{- end }}
+
+        {{- if and .Values.jvmExporter.enabled (eq .Values.jvmExporter.mode "sidecar") }}
+        - name: jmx-exporter
+          image: "{{ .Values.jvmExporter.sidecar.image }}"
+          env:
+            - name: POD_IP
+              valueFrom:
+                fieldRef:
+                  fieldPath: status.podIP
+          # We do a simple replace, then launch the httpserver
+          command: ["/bin/sh","-c"]
+          args:
+            - |
+              set -e
+              cp /config/jmx.yaml /work/jmx.yaml
+              sed -i "s|__POD_IP__|${POD_IP}|g" /work/jmx.yaml
+              exec java -jar /opt/jmx/jmx_prometheus_httpserver.jar {{ .Values.jvmExporter.port }} /work/jmx.yaml
+          ports:
+            - name: metrics
+              containerPort: {{ .Values.jvmExporter.port }}
+          volumeMounts:
+            - name: jmx-jar
+              mountPath: /opt/jmx
+            - name: jmx-config
+              mountPath: /config
+              readOnly: true
+            - name: jmx-work
+              mountPath: /work
+          {{- end }}
+
+        {{- if .Values.preRestartDump.enabled }}
+        - name: jdk-tools
+          image: "{{ .Values.preRestartDump.jdkImage }}"
+          command: ["/bin/sh","-c","sleep infinity"]
+          volumeMounts:
+            - name: dump-script
+              mountPath: /dump
+            - name: node-dump-dir
+              mountPath: /host-logs
+          lifecycle:
+            preStop:
+              exec:
+                command: ["/bin/sh","-c","/dump/dump.sh || true; sleep 5"]
+        {{- end }}
+
+      volumes:
+        {{- if or (and .Values.jvmExporter.enabled (eq .Values.jvmExporter.mode "agent")) (and .Values.jvmExporter.enabled (eq .Values.jvmExporter.mode "sidecar")) }}
+        - name: jmx-jar
+          emptyDir: {}
+        - name: jmx-config
+          configMap:
+            name: {{ include "hello-app.fullname" . }}-jmx-config
+        - name: jmx-work
+          emptyDir: {}
+          emptyDir: {}
+        {{- end }}
+        {{- if .Values.preRestartDump.enabled }}
+        - name: dump-script
+          configMap:
+            name: {{ include "hello-app.fullname" . }}-dump-script
+            defaultMode: 0755
+        - name: node-dump-dir
+          hostPath:
+            path: {{ .Values.preRestartDump.hostPathDir }}
+            type: DirectoryOrCreate
+        {{- end }}

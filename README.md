@@ -1,144 +1,34 @@
-# 🧪 Platform Engineer Homework
+# hello-app · Deploy, Test, Analyze
 
-## 📌 Objective
-
-This homework is designed to evaluate your ability to deploy, monitor, and operate a Java-based application on Kubernetes using Helm and diagnostic tools. You will simulate a production scenario where a service becomes unresponsive due to internal thread contention. Your task is to make it observable, recoverable, and operationally safe.
-
----
-
-## 🧱 Provided Application
-
-You are given a prebuilt Java Spring Boot application (or can build it yourself from `Dockerfile`) with the following behavior:
-
-- Exposes a simple `/hello` endpoint on port `8080`
-- After **100 seconds**, a background thread acquires a lock and enters an **infinite wait**
-- All future `/hello` requests become **blocked** due to synchronization on the same lock
-- The app **does not crash**, and logs show no error
-- The issue is only observable via degraded latency or hanging requests
+This repo contains a Java/Spring demo app and a Helm chart (`./java-app`) that
+shows how to operate a “black-box” service safely: liveness/readiness probes,
+JMX metrics, and *pre-restart thread dumps* for incident analysis.
 
 ---
 
-## ✅ Your Tasks
+## What’s here
 
-### 1️⃣ Helm Chart Setup (**45 points**)
-
-Design and submit a Helm chart that includes:
-
-- `Deployment.yaml` with proper probes and resource settings
-- `Service.yaml` to expose the application
-- `Ingress.yaml` for `/hello` routing
-- `values.yaml` to allow configurability
-- Liveness/readiness probes that eventually detect `/hello` is unresponsive and restart the container
-
-Your values.yaml must support configuration flexibility. The following are required or recommended:
-
-| Key                      | Type   | Description                                                                  |
-| ------------------------ | ------ | ---------------------------------------------------------------------------- |
-| `image.repository`       | string | Docker image repo                                                            |
-| `image.tag`              | string | Image version                                                                |
-| `resources`              | object | CPU/memory requests & limits                                                 |
-| `ingress.enabled`        | bool   | Whether to create an ingress                                                 |
-| `service.type`           | string | ClusterIP, NodePort, or LoadBalancer                                         |
-| `probes.enabled`         | bool   | Whether to enable liveness/readiness probes                                  |
-| `jvmExporter.enabled`    | bool   | Whether to enable jmx-exporter sidecar (if implemented)                      |
-| `jvmExporter.crdInstall` | bool   | ⚠️ If jmx-exporter CRD is required (e.g. for ServiceMonitor), allow toggling |
+- **App**: simple Spring Boot service exposing `GET /hello` on port `8080`.
+  After ~100s, a background thread grabs a lock and blocks future requests (no crash).
+- **Helm chart**: [`./java-app`](./java-app)
+  - Probes pre-configured (readiness fails first, then liveness restarts)
+  - Optional **JMX Exporter** sidecar (`jvmExporter.enabled=true`)
+  - Optional **ServiceMonitor** for Prometheus Operator
+  - Optional **preRestartDump** to collect `jstack` before termination
+- **CI**: GH Actions pipeline (GHCR only) builds/pushes image and can
+  run `helm lint/template` (offline) and an optional cluster dry-run.
 
 ---
 
-### 2️⃣ Pre-Restart Thread Dump Capture (**20 points**)
+## Quick test (local)
 
-Before the container is restarted, you must:
-
-- Use `jstack` (or equivalent) to dump the JVM thread stack
-- Save the output to the **Kubernetes node's local disk**
-- Path format (example): `/var/log/java-dump/<pod-name>.log`
-
----
-
-### 3️⃣ Basic JVM Observability (**15 points**)
-
-Enhance observability by:
-
-- Adding `jmx_exporter` or similar
-- Exposing JVM thread/GC metrics via Prometheus
-- (Optional) Showing how alerts can be defined for thread blocking
-
----
-
-### 4️⃣ CI/CD Pipeline (**20 points**)
-
-Create a GitHub Actions workflow that:
-
-- Builds the Java app into a Docker image
-- Pushes it to Docker Hub or GitHub Container Registry
-- (Optional) Validates Helm templates or performs dry-run deploys
-
-> Place your workflow in `.github/workflows/pipeline.yml`
-
----
-
-## 🔍 Reasonability Review
-
-All requirements are considered **realistic and production-relevant** for a Platform Engineer:
-
-| Area                    | Justification                                                                 |
-|-------------------------|-------------------------------------------------------------------------------|
-| Helm templating         | Industry standard for Kubernetes deployments                                  |
-| Probes & resource limits| Essential for platform-managed app health and autoscaling                    |
-| Pre-restart diagnostics | Required in real-world SRE/on-call workflows                                 |
-| JVM observability       | Crucial for diagnosing GC/Thread contention in production Java systems        |
-| CI/CD pipeline          | Demonstrates automation readiness and delivery process awareness              |
-
----
-
-## 📝 Deliverables
-
-1. A GitHub repository containing:
-   - Helm chart (`charts/java-app/`)
-   - Sample `values.yaml`
-   - Optional: `.github/workflows/` CI/CD workflow
-   - README explaining how to test, deploy, and analyze
-2. Logs and dumps outputted by the app `logs/<pod-name>.log`
-3. A short `SUMMARY.md` with:
-   - Your design decisions
-   - Any assumptions or limitations
-   - What you’d improve in a production version
-
----
-
-## 👤 Notes for Non-Java Engineers
-
-If you're not familiar with Java debugging tools:
-
-- Most JDKs support:
-  ```bash
-  jps           # Lists JVM PIDs
-  jstack <pid>  # Dumps thread state
-  ```
-
-- If unavailable, you may:
-  - Use `/proc/<pid>/stack`
-  - Use a debugging sidecar container with tools installed
-  - Inject `openjdk` tooling via a custom image
-
-Clearly explain your intent if you're unable to implement full tooling — **communication and reasoning are more important than completeness**.
-
-## 🧠 Scoring Summary
-
-| Section                                  | Points |
-|------------------------------------------|--------|
-| Helm chart (Deployment, Service, Ingress)| 45     |
-| Pre-restart stack dump to node log       | 20     |
-| JVM observability (Prometheus, exporter) | 15    |
-| CI/CD pipeline (GitHub Actions)          | 20    |
-| **Total**                                | **100** |
-
----
-
-## 🚀 Testing Instructions
-
-The following `Makefile` commands are available to simplify Docker-based development and testing:
-
+### 1) Build and run with Docker
+```bash
+# From repo root
+docker build -t ghcr.io/fenganthony/spring-hello-problem:dev .
+docker run --rm -p 8080:8080 ghcr.io/fenganthony/spring-hello-problem:dev
+```
+or
 | Command           | Description                                                |
 |------------------|------------------------------------------------------------|
 | `make build`     | Build the Docker image using the specified image name and tag |
@@ -148,32 +38,129 @@ The following `Makefile` commands are available to simplify Docker-based develop
 | `make push`      | Push the built image to your Docker registry                |
 | `make clean`     | Remove the local Docker image                               |
 
-> Default image: `yourname/spring-hello-problem:1.0.0`  
-> Exposed port: `8080`
+> Default image: `ghcr.io/fenganthony/spring-hello-problem:1.0.0`  
+> Exposed port: `8080` refer from the instruction
+
+### 2) Test Locally
 
 ```bash
-# After deploying via Helm:
-curl http://<your-ingress-host>/hello
+curl http://localhost:8080/hello
+```
+If you see a response like `{"message":"Hello, World!"}`, then the service is working correctly.
+Note that this works only because we have the Docker container running and accessible on `localhost:8080`.
 
-# ✅ Initial behavior:
-# You should see: "Hello World"
+## Deploy with Helm (recommend)
+Requirements: kubectl, helm, and a cluster context (e.g. minikube, kind, or a cloud provider).
 
-# 🕒 After ~100 seconds:
-# The endpoint will hang due to a background thread holding a global lock.
-# You should begin seeing timeouts or delayed responses.
+### 0) Choose the image you want to deploy
+From CI: ghcr.io/fenganthony/spring-hello-problem:<tag>
+default branch pushes use v1.0.0 (configurable in workflow)
+manual runs can set version, tag pushes (vX.Y.Z) publish the same tag
 
-# 🧪 Next:
-# - Use jstack to inspect thread state
-# - Save the output to /var/log/java-dump/<pod-name>.log on the node
-# - Observe probe-triggered restarts if implemented
+Or build locally and push your own tag to GHCR.
+
+### 1) Deploy the Helm chart
+Installation:
+```bash
+helm upgrade --install {app_name_you_preferred} ./java-app
 ```
 
----
-## 🍀 Good luck!
+With Ingress Controller:
+```bash
+helm upgrade --install {app_name_you_preferred} ./java-app \
+  --set image.repository={url_to_repo, defaultly ghcr.io/fenganthony/spring-hello-problem},image.tag= <version_tag, defaultly v1.0.0> \
+  --set ingress.enabled=true \
+  --set ingress.hosts[0].host= {ingress_host_domain, by default example.host.com} \
+  --set ingress.hosts[0].paths[0].path=/hello
+```
+Note: The cluster must have an Ingress Controller installed and configured to use this feature.
 
-We're not evaluating how well you write Java —  
-We're evaluating **how well you deploy, diagnose, and recover black-box applications in production**.
+Enable JMX exporter and ServiceMonitor:
+```bash
+helm upgrade --install {app_name_you_preferred} ./java-app \
+  --set jvmExporter.enabled=true \
+  --set jvmExporter.crdInstall=true \
+  --set jvmExporter.mode={sidecar/agent, defaultly sidecar}
+```
+Note: 
+1. Such configurations help in monitoring the JVM metrics and managing the application effectively, but need to have Prometheus Operator CRDs exist in your cluster context.
+2. jvmExporter mode is a self-defined variable, with sidecar mode, a Prometheus httpsserver created to collect metrics from the application; agent mode is to run the JMX exporter as a Java agent within the application instead.
+3. jvmExporter will expose the metrics at `/metrics` endpoint, 9404 port by default.
 
-Show us your thought process, observability design, and operational maturity.
+A simple table of configurable parameters (more variables could be seen in the values.yaml):
+| Key                      | Type   | Purpose                                          |
+| ------------------------ | ------ | ------------------------------------------------ |
+| `image.repository`       | string | Docker image repo (default uses GHCR fixed name) |
+| `image.tag`              | string | Version tag (e.g. `v1.0.0`)                      |
+| `ingress.enabled`        | bool   | Creates an Ingress for `/hello`                  |
+| `probes.enabled`         | bool   | Readiness & liveness probes                      |
+| `jvmExporter.enabled`    | bool   | Expose metrics via JMX exporter                  |
+| `jvmExporter.crdInstall` | bool   | Create `ServiceMonitor` if CRDs exist            |
+| `jvmExporter.mode`       | string | JMX exporter mode (sidecar/agent)                |
+| `preRestartDump.enabled` | bool   | Capture thread dumps pre-termination             |
 
-We’re excited to see your engineering judgment in action!
+### 2) Testing & Metric Accessing
+
+For Main Service:
+From Ingress Controller:
+```bash
+curl http://<ingress_host>/hello
+```
+From kubectl (Only for testing locally, w/o Ingress Controller):
+```bash
+kubectl -n default port-forward <svc/java-app> 8080:8080
+curl http://localhost:8080/hello
+```
+
+For Pod's metrics access:
+
+From kubectl:
+```bash
+kubectl -n default port-forward <svc/java-app> 9404:9404
+curl http://localhost:9404/metrics
+```
+(to be implemented) Could potentially also be accessed via Ingress Controller
+```bash
+curl http://<ingress_host>/metrics
+```
+
+## Analyze & Debug
+
+### A) Pre-restart thread dumps (recommended)
+This procedure can be triggered in either:
+#### 1. Automatic mode
+preRestartDump.enabled=true adds a tiny jdk-tools container and a preStop
+hook that runs a dump script before termination. Dumps are written to the node
+via hostPath (default /var/log/java-dump/<pod-name>.log).
+
+Enable it (it’s enabled by default in values, but if not, you can enable it manuall):
+```bash
+helm upgrade --install {app_name_you_preferred} ./java-app \
+  --set preRestartDump.enabled=true \
+  --set preRestartDump.hostPathDir=/var/log/java-dump
+```
+When triggering a restart (e.g., scale to 0 or kill a Pod, or from readiness probe failure (our main concern)), the dump is automatically fetched:
+
+SSH to the node where the k8s cluster ran and read /var/log/java-dump/<pod>.log
+
+#### 2. Manual mode
+Exec into the jdk-tools container and run the script on demand, for example:
+
+```bash
+kubectl -n default exec -it deploy/java-app -c jdk-tools -- /bin/sh
+/dump/dump.sh
+```
+
+### B) Classic logs & probes
+
+If no thread dump is available, you can check the standard logs:
+
+```bash
+kubectl logs -n default deploy/java-app -c app --timestamps
+
+kubectl describe pod -n default -l app.kubernetes.io/name=hello-app
+```
+Watch readiness turn false, then liveness restart the Pod.
+
+### C) Metrics (Prometheus)
+With jvmExporter.enabled=true, scrape <prometheus_server>/metrics can also see some logs. (In current implementation, it may not include all application logs, but more likely to be a scalable solution)

@@ -1,0 +1,20 @@
+
+1. Get the application URL by running these commands:
+
+  {{- if .Values.ingress.enabled }}
+  Ingress enabled:
+    http://{{ (index .Values.ingress.hosts 0).host }}{{ (index (index .Values.ingress.hosts 0).paths 0).path }}
+  {{- else }}
+  Ingress disabled:
+    export POD_NAME=$(kubectl get pods -l "app.kubernetes.io/name={{ include "hello-app.name" . }},app.kubernetes.io/instance={{ .Release.Name }}" -o jsonpath="{.items[0].metadata.name}")
+    kubectl port-forward $POD_NAME 8080:{{ .Values.service.targetPort }}
+    curl http://localhost:8080/hello
+  {{- end }}
+
+2. To verify liveness/readiness behavior:
+   - The app is expected to hang after some time; readiness will fail first, then liveness will restart the pod.
+   - Tune values under .Values.probes.* as needed.
+
+3. If you enabled the JMX exporter (.Values.jvmExporter.enabled=true):
+   - Metrics port exposed on Service as 'metrics' ({{ .Values.jvmExporter.port }}).
+   - If using Prometheus Operator, set .Values.jvmExporter.crdInstall=true to create a ServiceMonitor.

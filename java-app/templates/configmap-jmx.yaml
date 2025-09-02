@@ -1,0 +1,12 @@
+
+{{- if .Values.jvmExporter.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "hello-app.fullname" . }}-jmx-config
+  labels:
+    {{- include "hello-app.labels" . | nindent 4 }}
+data:
+  jmx.yaml: |
+    {{- toYaml .Values.jvmExporter.config | nindent 4 }}
+{{- end }}
