@@ -15,7 +15,7 @@ on:
         default: false
       helm_chart_path:
         description: "Path to Helm chart"
-        default: "./java-app"
+        default: "../../java-app"
       helm_release:
         description: "Release name (for dry-run)"
         default: "java-app"
