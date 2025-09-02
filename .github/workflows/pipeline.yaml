@@ -1,22 +1,13 @@
-name: CI/CD (Docker + optional Helm)
+name: CI/CD (GHCR + optional Helm)
 
 on:
   push:
-    branches: [ "anthony_feature" ]
+    branches: [ "anthony_feature" ]   # 需要可自行擴充或改成 ["**"]
     tags:     [ "v*" ]
   workflow_dispatch:
     inputs:
-      registry:
-        description: "Target registry"
-        type: choice
-        options: [ghcr, dockerhub]
-        default: ghcr
       version:
-        description: "Override image version (e.g. 1.0.0)"
-        type: string
-        default: "1.0.0"
-      image_name:
-        description: "Override image name (e.g. myuser/myapp or org/repo)"
+        description: "Image version (e.g. 1.0.0). If set, overrides tag logic."
         required: false
       helm_lint:
         description: "Run Helm lint/template/dry-run"
@@ -34,7 +25,7 @@ on:
 
 permissions:
   contents: read
-  packages: write   # needed for GHCR pushes
+  packages: write   # GHCR push 需要
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -44,66 +35,44 @@ jobs:
   build-and-push:
     runs-on: ubuntu-latest
     env:
-      # compute a short SHA we can reuse for image tag and Helm values
-      SHORT_SHA: ${{ github.sha || '' }}
+      IMAGE: ghcr.io/fenganthony/spring-hello-problem
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Set SHORT_SHA (7 chars)
-        run: echo "SHORT_SHA=${GITHUB_SHA::7}" >> $GITHUB_ENV
-
-      - name: Set registry & image name
-        id: vars
+      # 決定要使用的 tag
+      - name: Compute EFFECTIVE_TAG
         shell: bash
         run: |
-          if [[ "${{ github.event_name }}" == "workflow_dispatch" && "${{ inputs.registry }}" == "dockerhub" ]]; then
-            echo "REGISTRY=dockerhub" >> $GITHUB_ENV
-            if [[ -n "${{ inputs.image_name }}" ]]; then
-              echo "IMAGE=${{ inputs.image_name }}" >> $GITHUB_ENV
-            else
-              echo "IMAGE=${{ secrets.DOCKERHUB_USERNAME }}/${{ github.event.repository.name }}" >> $GITHUB_ENV
-            fi
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" && -n "${{ inputs.version }}" ]]; then
+            TAG="${{ inputs.version }}"
+          elif [[ "${{ github.ref_type }}" == "tag" ]]; then
+            TAG="${GITHUB_REF_NAME#v}"
+          elif [[ "${{ github.ref }}" == "refs/heads/${{ github.event.repository.default_branch }}" ]]; then
+            TAG="latest"
           else
-            echo "REGISTRY=ghcr" >> $GITHUB_ENV
-            if [[ -n "${{ inputs.image_name }}" ]]; then
-              echo "IMAGE=ghcr.io/${{ inputs.image_name }}" >> $GITHUB_ENV
-            else
-              echo "IMAGE=ghcr.io/${{ github.actor }}/spring-hello-problem-${{ inputs.version }}" >> $GITHUB_ENV
-            fi
+            TAG="${GITHUB_REF_NAME//\//-}"
           fi
-          echo "Resolved IMAGE=${IMAGE}"
-      
+          echo "EFFECTIVE_TAG=$TAG" >> $GITHUB_ENV
+          echo "Using tag: $TAG"
+
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      # Login for GHCR
       - name: Log in to GHCR
-        if: env.REGISTRY == 'ghcr'
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      # Login for Docker Hub
-      - name: Log in to Docker Hub
-        if: env.REGISTRY == 'dockerhub'
-        uses: docker/login-action@v3
-        with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
-
-      - name: Extract Docker metadata (tags, labels)
+      - name: Extract Docker metadata
         id: meta
         uses: docker/metadata-action@v5
         with:
           images: ${{ env.IMAGE }}
           tags: |
-            type=ref,event=branch
-            type=ref,event=tag
-            type=raw,value=latest,enable={{is_default_branch}}
-            type=sha,format=short,prefix=sha-
+            type=raw,value=${{ env.EFFECTIVE_TAG }}
 
       - name: Build and push
         uses: docker/build-push-action@v6
@@ -131,7 +100,7 @@ jobs:
           helm template "${{ inputs.helm_release }}" "${{ inputs.helm_chart_path }}" \
             --namespace "${{ inputs.helm_namespace }}" \
             --set image.repository="${{ env.IMAGE }}" \
-            --set image.tag="${{ env.SHORT_SHA }}"
+            --set image.tag="${{ env.EFFECTIVE_TAG }}"
 
       - name: helm install --dry-run --debug
         if: ${{ github.event_name == 'workflow_dispatch' && inputs.helm_lint }}
@@ -141,4 +110,4 @@ jobs:
             --create-namespace \
             --dry-run --debug \
             --set image.repository="${{ env.IMAGE }}" \
-            --set image.tag="${{ env.SHORT_SHA }}"
+            --set image.tag="${{ env.EFFECTIVE_TAG }}"
