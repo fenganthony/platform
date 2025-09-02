@@ -2,7 +2,7 @@ name: CI/CD (GHCR + optional Helm)
 
 on:
   push:
-    branches: [ "anthony_feature" ]   # 需要可自行擴充或改成 ["**"]
+    branches: [ "anthony_feature" ]
     tags:     [ "v*" ]
   workflow_dispatch:
     inputs:
@@ -12,7 +12,7 @@ on:
       helm_lint:
         description: "Run Helm lint/template/dry-run"
         type: boolean
-        default: false
+        default: true
       helm_chart_path:
         description: "Path to Helm chart"
         default: "./java-app"
