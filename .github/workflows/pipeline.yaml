@@ -150,14 +150,14 @@ jobs:
             --set image.tag="${{ env.EFFECTIVE_TAG }}"
 
       - name: Write kubeconfig
-        if: env.HELM_CLUSTER_DRY_RUN == 'true' && secrets.KUBE_CONFIG != ''
+        if: env.HELM_CLUSTER_DRY_RUN == 'true' && ${{ secrets.GITHUB_TOKEN }} != ''
         run: |
           mkdir -p ~/.kube
           echo "${{ secrets.KUBE_CONFIG }}" | base64 -d > ~/.kube/config
           chmod 600 ~/.kube/config
 
       - name: helm install --dry-run --debug
-        if: env.HELM_CLUSTER_DRY_RUN == 'true' && secrets.KUBE_CONFIG != ''
+        if: env.HELM_CLUSTER_DRY_RUN == 'true' && ${{ secrets.GITHUB_TOKEN }} != ''
         run: |
           helm install "${{ env.HELM_RELEASE }}" "${{ env.HELM_CHART_PATH }}" \
             --namespace "${{ env.HELM_NAMESPACE }}" \
