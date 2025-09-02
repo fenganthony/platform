@@ -11,6 +11,10 @@ on:
         type: choice
         options: [ghcr, dockerhub]
         default: ghcr
+      version:
+        description: "Override image version (e.g. 1.0.0)"
+        required: false
+        default: "1.0.0"
       image_name:
         description: "Override image name (e.g. myuser/myapp or org/repo)"
         required: false
@@ -20,10 +24,10 @@ on:
         default: false
       helm_chart_path:
         description: "Path to Helm chart"
-        default: "./charts/hello-app"
+        default: "./java-app"
       helm_release:
         description: "Release name (for dry-run)"
-        default: "hello-app"
+        default: "java-app"
       helm_namespace:
         description: "Namespace (for dry-run)"
         default: "default"
@@ -65,7 +69,7 @@ jobs:
             if [[ -n "${{ inputs.image_name }}" ]]; then
               echo "IMAGE=ghcr.io/${{ inputs.image_name }}" >> $GITHUB_ENV
             else
-              echo "IMAGE=ghcr.io/${{ github.repository }}" >> $GITHUB_ENV
+              echo "IMAGE=ghcr.io/${{ github.actor }}/spring-hello-problem-${{ inputs.version }}" >> $GITHUB_ENV
             fi
           fi
           echo "Resolved IMAGE=${IMAGE}"
