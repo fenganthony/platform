@@ -1,4 +1,4 @@
-IMAGE_NAME = yourname/spring-hello-problem
+IMAGE_NAME = quasooony/spring-hello-problem
 IMAGE_TAG = 1.0.0
 CONTAINER_NAME = spring-hello-container
 PORT = 8080

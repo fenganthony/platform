@@ -1,0 +1,6 @@
+apiVersion: v2
+name: spring-hello-container
+description: A Helm chart for deploying the platform homework Spring Boot app with probes and optional JMX exporter
+type: application
+version: 0.1.0
+appVersion: "1.0.0"

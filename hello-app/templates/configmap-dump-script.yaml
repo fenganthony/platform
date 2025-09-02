@@ -1,0 +1,32 @@
+
+{{- if .Values.preRestartDump.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "hello-app.fullname" . }}-dump-script
+  labels:
+    {{- include "hello-app.labels" . | nindent 4 }}
+data:
+  dump.sh: |
+    #!/bin/sh
+    set -eu
+    POD_NAME="${HOSTNAME:-unknown-pod}"
+    OUT="/host-logs/${POD_NAME}.log"
+    echo "[$(date -Iseconds)] Starting thread dump to ${OUT}"
+    PID="$(pidof java || true)"
+    if [ -z "${PID}" ]; then
+      PID="$(ps -eo pid,comm | awk '$2 ~ /java/ {print $1; exit}')"
+    fi
+    if [ -z "${PID}" ]; then
+      echo "No java process found" >> "${OUT}" 2>&1 || true
+      exit 0
+    fi
+    if command -v jstack >/dev/null 2>&1; then
+      timeout {{ .Values.preRestartDump.timeoutSeconds }} jstack -l "${PID}" >> "${OUT}" 2>&1 || true
+    elif command -v jcmd >/dev/null 2>&1; then
+      timeout {{ .Values.preRestartDump.timeoutSeconds }} jcmd "${PID}" Thread.print >> "${OUT}" 2>&1 || true
+    else
+      echo "No jstack/jcmd available" >> "${OUT}" 2>&1 || true
+    fi
+    echo "[$(date -Iseconds)] Done"
+{{- end }}

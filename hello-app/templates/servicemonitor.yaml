@@ -1,0 +1,22 @@
+
+{{- if and .Values.jvmExporter.enabled .Values.jvmExporter.crdInstall }}
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: {{ include "hello-app.fullname" . }}
+  labels:
+    {{- include "hello-app.labels" . | nindent 4 }}
+    {{- with .Values.jvmExporter.serviceMonitor.additionalLabels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ include "hello-app.name" . }}
+      app.kubernetes.io/instance: {{ .Release.Name }}
+  endpoints:
+    - port: metrics
+      interval: {{ .Values.jvmExporter.serviceMonitor.interval }}
+      scrapeTimeout: {{ .Values.jvmExporter.serviceMonitor.scrapeTimeout }}
+  namespaceSelector: {}
+{{- end }}
