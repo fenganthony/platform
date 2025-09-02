@@ -22,6 +22,10 @@ on:
       helm_namespace:
         description: "Namespace (for dry-run)"
         default: "default"
+      cluster_dry_run:
+        description: "Run 'helm install --dry-run' against a real cluster (requires KUBE_CONFIG secret)"
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -38,7 +42,8 @@ jobs:
       IMAGE: ghcr.io/fenganthony/spring-hello-problem   
       DEFAULT_VERSION: v1.0.0                           
       HELM_LINT_DEFAULT: "true"                         
-      HELM_CHART_PATH_DEFAULT: ./java-app               
+      HELM_CHART_PATH_DEFAULT: ./java-app
+      HELM_CLUSTER_DRY_RUN_DEFAULT: "false"               
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -78,6 +83,13 @@ jobs:
           else
             echo "HELM_RELEASE=java-app"   >> $GITHUB_ENV
             echo "HELM_NAMESPACE=default"  >> $GITHUB_ENV
+          fi
+
+          # to run cluster dry-run
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" && "${{ inputs.cluster_dry_run }}" == "true" ]]; then
+            echo "HELM_CLUSTER_DRY_RUN=true" >> $GITHUB_ENV
+          else
+            echo "HELM_CLUSTER_DRY_RUN=${HELM_CLUSTER_DRY_RUN_DEFAULT}" >> $GITHUB_ENV
           fi
       - name: Validate Helm chart path
         if: env.HELM_LINT == 'true'
@@ -137,8 +149,15 @@ jobs:
             --set image.repository="${{ env.IMAGE }}" \
             --set image.tag="${{ env.EFFECTIVE_TAG }}"
 
+      - name: Write kubeconfig
+        if: env.HELM_CLUSTER_DRY_RUN == 'true' && secrets.KUBE_CONFIG != ''
+        run: |
+          mkdir -p ~/.kube
+          echo "${{ secrets.KUBE_CONFIG }}" | base64 -d > ~/.kube/config
+          chmod 600 ~/.kube/config
+
       - name: helm install --dry-run --debug
-        if: env.HELM_LINT == 'true'
+        if: env.HELM_CLUSTER_DRY_RUN == 'true' && secrets.KUBE_CONFIG != ''
         run: |
           helm install "${{ env.HELM_RELEASE }}" "${{ env.HELM_CHART_PATH }}" \
             --namespace "${{ env.HELM_NAMESPACE }}" \
