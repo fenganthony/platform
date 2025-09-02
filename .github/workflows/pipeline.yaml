@@ -14,7 +14,6 @@ on:
       version:
         description: "Override image version (e.g. 1.0.0)"
         type: string
-        required: false
         default: "1.0.0"
       image_name:
         description: "Override image name (e.g. myuser/myapp or org/repo)"
