@@ -1,0 +1,140 @@
+name: CI/CD (Docker + optional Helm)
+
+on:
+  push:
+    branches: [ "anthony_feature" ]
+    tags:     [ "v*" ]
+  workflow_dispatch:
+    inputs:
+      registry:
+        description: "Target registry"
+        type: choice
+        options: [ghcr, dockerhub]
+        default: ghcr
+      image_name:
+        description: "Override image name (e.g. myuser/myapp or org/repo)"
+        required: false
+      helm_lint:
+        description: "Run Helm lint/template/dry-run"
+        type: boolean
+        default: false
+      helm_chart_path:
+        description: "Path to Helm chart"
+        default: "./charts/hello-app"
+      helm_release:
+        description: "Release name (for dry-run)"
+        default: "hello-app"
+      helm_namespace:
+        description: "Namespace (for dry-run)"
+        default: "default"
+
+permissions:
+  contents: read
+  packages: write   # needed for GHCR pushes
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    env:
+      # compute a short SHA we can reuse for image tag and Helm values
+      SHORT_SHA: ${{ github.sha || '' }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set SHORT_SHA (7 chars)
+        run: echo "SHORT_SHA=${GITHUB_SHA::7}" >> $GITHUB_ENV
+
+      - name: Set registry & image name
+        id: vars
+        shell: bash
+        run: |
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" && "${{ inputs.registry }}" == "dockerhub" ]]; then
+            echo "REGISTRY=dockerhub" >> $GITHUB_ENV
+            if [[ -n "${{ inputs.image_name }}" ]]; then
+              echo "IMAGE=${{ inputs.image_name }}" >> $GITHUB_ENV
+            else
+              echo "IMAGE=${{ secrets.DOCKERHUB_USERNAME }}/${{ github.event.repository.name }}" >> $GITHUB_ENV
+            fi
+          else
+            echo "REGISTRY=ghcr" >> $GITHUB_ENV
+            if [[ -n "${{ inputs.image_name }}" ]]; then
+              echo "IMAGE=ghcr.io/${{ inputs.image_name }}" >> $GITHUB_ENV
+            else
+              echo "IMAGE=ghcr.io/${{ github.repository }}" >> $GITHUB_ENV
+            fi
+          fi
+          echo "Resolved IMAGE=${IMAGE}"
+      
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      # Login for GHCR
+      - name: Log in to GHCR
+        if: env.REGISTRY == 'ghcr'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # Login for Docker Hub
+      - name: Log in to Docker Hub
+        if: env.REGISTRY == 'dockerhub'
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Extract Docker metadata (tags, labels)
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.IMAGE }}
+          tags: |
+            type=ref,event=branch
+            type=ref,event=tag
+            type=raw,value=latest,enable={{is_default_branch}}
+            type=sha,format=short,prefix=sha-
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to:   type=gha,mode=max
+
+      # ---------- Optional Helm checks ----------
+      - name: Setup Helm
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.helm_lint }}
+        uses: azure/setup-helm@v4
+
+      - name: helm lint
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.helm_lint }}
+        run: helm lint "${{ inputs.helm_chart_path }}"
+
+      - name: helm template (render manifests)
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.helm_lint }}
+        run: |
+          helm template "${{ inputs.helm_release }}" "${{ inputs.helm_chart_path }}" \
+            --namespace "${{ inputs.helm_namespace }}" \
+            --set image.repository="${{ env.IMAGE }}" \
+            --set image.tag="${{ env.SHORT_SHA }}"
+
+      - name: helm install --dry-run --debug
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.helm_lint }}
+        run: |
+          helm install "${{ inputs.helm_release }}" "${{ inputs.helm_chart_path }}" \
+            --namespace "${{ inputs.helm_namespace }}" \
+            --create-namespace \
+            --dry-run --debug \
+            --set image.repository="${{ env.IMAGE }}" \
+            --set image.tag="${{ env.SHORT_SHA }}"
